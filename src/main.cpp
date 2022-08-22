@@ -9,14 +9,31 @@ This code is partically based off of the ArduinoSpotify example
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <SpotifyArduino.h>
 #include <GxEPD.h>
 #include <GxGDE0213B72B/GxGDE0213B72B.h> // 2.13" b/w
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <GxIO/GxIO_SPI/GxIO_SPI.h>
 #include <GxIO/GxIO.h>
 #include <SpotifyArduino.h>
+#include <SpotifyArduinoCert.h>
 #include <ArduinoJson.h>
+
+//------- Replace the following! ------
+const char *ssid = "";
+const char *password = "";
+
+char clientId[] = "";     // Your client ID of your spotify APP
+char clientSecret[] = ""; // Your client Secret of your spotify APP (Do Not share this!)
+
+// Country code, including this is advisable
+#define SPOTIFY_MARKET "GB"
+
+// Go here to get your refresh token, this is not very secure but it's the most convenient way to get it
+// Tick the boxes "user-read-playback-state", "user-read-playback-position" and "user-modify-playback-state"
+// https://getyourspotifyrefreshtoken.herokuapp.com/
+#define SPOTIFY_REFRESH_TOKEN ""
+//-------------------------------------
+
 
 void printCurrentlyPlayingToDisplay(CurrentlyPlaying currentlyPlaying);
 void printCurrentlyPlayingToSerial(CurrentlyPlaying currentlyPlaying);
@@ -27,25 +44,10 @@ void drawSpotifyScan(int x, int y, int lengths[24]);
 void drawRoundedLines(int distanceBetween, int width, int lengths[], int count, int x, int y);
 void drawRoundedLine(int height, int width, int x, int y);
 
-
-#define DEBUG true
+#define DEBUG false
 #define MAX_LENGTH_PER_LINE 22
-#define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP 300
-#define PRE_RESTART_TIME 15
-
-//------- Replace the following! ------
-const char *ssid = "";
-const char *password = "";
-
-// Follow the instructions on the ArduinoSpotify "getRefreshToken" example to get all of this
-char clientId[] = "";     // Your client ID of your spotify APP
-char clientSecret[] = ""; // Your client Secret of your spotify APP (Do Not share this!)
-
-// Country code, including this is advisable
-#define SPOTIFY_MARKET "GB"
-
-#define SPOTIFY_REFRESH_TOKEN ""
+#define uS_TO_S_FACTOR 1000000ULL // Conversion factor for micro seconds to seconds 
+#define TIME_TO_SLEEP 300 // Time between checking if songs are playing (in deepsleep)
 
 const unsigned char spotifyLogo[] PROGMEM = {
     0xff, 0xff, 0xe0, 0x1f, 0xff, 0xfc, 0xff, 0xfe, 0x00, 0x01, 0xff, 0xfc, 0xff, 0xf8, 0x00, 0x00,
@@ -67,45 +69,33 @@ const unsigned char spotifyLogo[] PROGMEM = {
     0x1f, 0xfc, 0xff, 0xf8, 0x00, 0x00, 0x7f, 0xfc, 0xff, 0xfe, 0x00, 0x01, 0xff, 0xfc, 0xff, 0xff,
     0xe0, 0x1f, 0xff, 0xfc};
 
-const char *root_ca = // this certificate is for scannables.scdn.co to get the scan link
+const char *scannablesURL = "https://scannables.scdn.co/uri/plain/svg/ffffff/black/256/";
+
+const char *scannables_root_ca = // this certificate is for scannables.scdn.co to get the scan link
     "-----BEGIN CERTIFICATE-----\n"
-    "MIIGAzCCBOugAwIBAgIQD20nTNczzv6uOjzyUv6AqjANBgkqhkiG9w0BAQsFADBN\n"
-    "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMScwJQYDVQQDEx5E\n"
-    "aWdpQ2VydCBTSEEyIFNlY3VyZSBTZXJ2ZXIgQ0EwHhcNMjAwODA1MDAwMDAwWhcN\n"
-    "MjEwOTAxMTIwMDAwWjBKMQswCQYDVQQGEwJTRTESMBAGA1UEBxMJU3RvY2tob2xt\n"
-    "MRMwEQYDVQQKEwpTcG90aWZ5IEFCMRIwEAYDVQQDDAkqLnNjZG4uY28wggEiMA0G\n"
-    "CSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDID9qN0a5/WfTmGmSoRgGUUas49dfa\n"
-    "wxBqGSTV97Rjtv03iBF6yNQ37O600TQe8U4xXhrO5iaB0j6aDW1bW6bQCjK8MMGJ\n"
-    "UhCLMYjan7mCQ5Db4rd9/PJk+pOlYJHqXfSWB5zrcSgxGQ42sGUIBwy61FKyC65H\n"
-    "dVkMr3xFoKi5WYSgMoVNrW6pIXle+xoI1sHnxtKD7bPSOE+T/7ciaALVgXlVlIN6\n"
-    "tSRwO33HkLOsjwGicM4VboAKtPIaBsj5J6R0LfB1QZiUsewUPmeB/OfTmY/B3PTC\n"
-    "7R9FwDtETw/lpomWQZsfzszFyOLHGOMd07Rv6/FQBNjUa3hzazClKWkTAgMBAAGj\n"
-    "ggLgMIIC3DAfBgNVHSMEGDAWgBQPgGEcgjFh1S8o541GOLQs4cbZ4jAdBgNVHQ4E\n"
-    "FgQUJr5o9Oob7MeWbi/T+RiiiNQd61YwHQYDVR0RBBYwFIIJKi5zY2RuLmNvggdz\n"
-    "Y2RuLmNvMA4GA1UdDwEB/wQEAwIFoDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYB\n"
-    "BQUHAwIwawYDVR0fBGQwYjAvoC2gK4YpaHR0cDovL2NybDMuZGlnaWNlcnQuY29t\n"
-    "L3NzY2Etc2hhMi1nNi5jcmwwL6AtoCuGKWh0dHA6Ly9jcmw0LmRpZ2ljZXJ0LmNv\n"
-    "bS9zc2NhLXNoYTItZzYuY3JsMEwGA1UdIARFMEMwNwYJYIZIAYb9bAEBMCowKAYI\n"
-    "KwYBBQUHAgEWHGh0dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwCAYGZ4EMAQIC\n"
-    "MHwGCCsGAQUFBwEBBHAwbjAkBggrBgEFBQcwAYYYaHR0cDovL29jc3AuZGlnaWNl\n"
-    "cnQuY29tMEYGCCsGAQUFBzAChjpodHRwOi8vY2FjZXJ0cy5kaWdpY2VydC5jb20v\n"
-    "RGlnaUNlcnRTSEEyU2VjdXJlU2VydmVyQ0EuY3J0MAwGA1UdEwEB/wQCMAAwggED\n"
-    "BgorBgEEAdZ5AgQCBIH0BIHxAO8AdgD2XJQv0XcwIhRUGAgwlFaO400TGTO/3wwv\n"
-    "IAvMTvFk4wAAAXO/YUA3AAAEAwBHMEUCIQCKZTwhR3LM+PszAAWNdh3m4nOpF0t1\n"
-    "5+9scMcCQhH9IAIgVMJa3FDGw5q2ieWB0GL7h4FF1TETlq9+VxrdxFYWktcAdQBc\n"
-    "3EOS/uarRUSxXprUVuYQN/vV+kfcoXOUsl7m9scOygAAAXO/YUBrAAAEAwBGMEQC\n"
-    "IB4P+FuP4f1K5e+rJ0lp799B+Nrq24ZUl6zwg4I1TXsjAiBk63IqoNMlsXm81ab3\n"
-    "xQ77mYBd6WF9Hzmrz8uoe7BWGDANBgkqhkiG9w0BAQsFAAOCAQEAn9uHdEVD5W2f\n"
-    "I/Ql+h8ljZZC5wmjGjS/GgohYQ5Zw4m11gL/PewxjlQwr8EhanP1LO7DhvO/8Ofw\n"
-    "QyXse9uCSIwS/gzd1U1CxmhuH8uF2AY2aKib8bvVXwGWwmxpd6prHDks7+iF9Jif\n"
-    "pih2wJOQcHXJmnQ72a/DoPMhS9ODdvxLYOiDbKymB59Zvhrh37hQlbHVi69y6xFw\n"
-    "Az5Y89K70+JoXBW0zExSQl2bynID9HvXLR/d1z/VsKhMUDsUblwsXVdU7QqvPNWK\n"
-    "5/BAMjjx4IeknKOCxxii4dUUzYmI0nrUBrBymHUPqbBqX+utWG+5bKcAAlTzofAl\n"
-    "7d0oisi77g==\n"
-    "-----END CERTIFICATE-----\n";
+    "MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\n"
+    "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n"
+    "d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\n"
+    "QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT\n"
+    "MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\n"
+    "b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG\n"
+    "9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB\n"
+    "CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97\n"
+    "nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt\n"
+    "43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P\n"
+    "T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4\n"
+    "gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO\n"
+    "BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR\n"
+    "TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw\n"
+    "DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr\n"
+    "hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg\n"
+    "06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF\n"
+    "PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls\n"
+    "YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk\n"
+    "CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=\n"
+    "-----END CERTIFICATE-----";
 
 WiFiClientSecure client;
-SpotifyArduino spotify(client, clientId, clientSecret, SPOTIFY_REFRESH_TOKEN);
 
 unsigned long delayBetweenRequests = 10000; // Time between requests (1 minute)
 unsigned long requestDueTime;               // time when request due
@@ -113,8 +103,13 @@ unsigned long requestDueTime;               // time when request due
 GxIO_Class io(SPI, /*CS=5*/ SS, /*DC=*/17, /*RST=*/16); // arbitrary selection of 17, 16
 GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);        // arbitrary selection of (16), 4
 
+// used to decide whether or not to update the display
 RTC_DATA_ATTR String oldSongURI = "";
 RTC_DATA_ATTR bool wasPlaying = false;
+RTC_DATA_ATTR bool hasResetDisplay = false;
+
+// The SpotifyArduino instance is in the RTC ram bc it's small enough and it prevents the access token from being lost
+RTC_DATA_ATTR SpotifyArduino spotify(client, clientId, clientSecret, SPOTIFY_REFRESH_TOKEN);
 
 void setup()
 {
@@ -127,7 +122,7 @@ void setup()
   display.setTextSize(1);
   display.setTextWrap(true);
 
-  Serial.begin(112500);
+  Serial.begin(115200);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   // Serial.println("");
@@ -138,27 +133,32 @@ void setup()
     ESP.restart();
   }
 
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  if(DEBUG){
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(ssid);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  }
 
-  client.setCACert(root_ca);
+  client.setCACert(spotify_server_cert);
 
   // If you want to enable some extra debugging
   // uncomment the "#define SPOTIFY_DEBUG" in ArduinoSpotify.h
 
-  Serial.println("Refreshing Access Tokens");
-  if (!spotify.refreshAccessToken())
+  if (DEBUG)
+    Serial.println("Checking and Refreshing Access Tokens If Needed!");
+  if (!spotify.checkAndRefreshAccessToken())
   {
     if (DEBUG)
       Serial.println("Failed to get access tokens");
     ESP.restart();
   }
-
-  while (millis() - setupTime < PRE_RESTART_TIME * 1000)
-    delay(10);
+  else
+  {
+    if (DEBUG)
+      Serial.println("Got access tokens");
+  }
 
   if (DEBUG)
     Serial.println("getting currently playing song:");
@@ -168,11 +168,25 @@ void setup()
 
   if (status == 200)
   {
-    Serial.println("Successfully got currently playing");
+    if (DEBUG)
+      Serial.println("Successfully got currently playing");
   }
   else if (status == 204)
   {
-    Serial.println("Doesn't seem to be anything playing");
+    if (DEBUG)
+      Serial.println("Doesn't seem to be anything playing");
+    if (wasPlaying)
+    {
+      showLines("I'm not listening to anything right now :(", 2, 50);
+      display.update();
+      wasPlaying = false;
+    }
+    else if (!hasResetDisplay)
+    {
+      showLines("I'm not listening to anything right now :(", 2, 50);
+      display.update();
+      hasResetDisplay = true;
+    }
   }
   else
   {
@@ -187,84 +201,84 @@ void setup()
 
 void printCurrentlyPlayingToSerial(CurrentlyPlaying currentlyPlaying)
 {
-    // Use the details in this method or if you want to store them
-    // make sure you copy them (using something like strncpy)
-    // const char* artist =
+  // Use the details in this method or if you want to store them
+  // make sure you copy them (using something like strncpy)
+  // const char* artist =
 
-    Serial.println("--------- Currently Playing ---------");
+  Serial.println("--------- Currently Playing ---------");
 
-    Serial.print("Is Playing: ");
-    if (currentlyPlaying.isPlaying)
+  Serial.print("Is Playing: ");
+  if (currentlyPlaying.isPlaying)
+  {
+    Serial.println("Yes");
+  }
+  else
+  {
+    Serial.println("No");
+  }
+
+  Serial.print("Track: ");
+  Serial.println(currentlyPlaying.trackName);
+  Serial.print("Track URI: ");
+  Serial.println(currentlyPlaying.trackUri);
+  Serial.println();
+
+  Serial.println("Artists: ");
+  for (int i = 0; i < currentlyPlaying.numArtists; i++)
+  {
+    Serial.print("Name: ");
+    Serial.println(currentlyPlaying.artists[i].artistName);
+    Serial.print("Artist URI: ");
+    Serial.println(currentlyPlaying.artists[i].artistUri);
+    Serial.println();
+  }
+
+  Serial.print("Album: ");
+  Serial.println(currentlyPlaying.albumName);
+  Serial.print("Album URI: ");
+  Serial.println(currentlyPlaying.albumUri);
+  Serial.println();
+
+  long progress = currentlyPlaying.progressMs; // duration passed in the song
+  long duration = currentlyPlaying.durationMs; // Length of Song
+  Serial.print("Elapsed time of song (ms): ");
+  Serial.print(progress);
+  Serial.print(" of ");
+  Serial.println(duration);
+  Serial.println();
+
+  float percentage = ((float)progress / (float)duration) * 100;
+  int clampedPercentage = (int)percentage;
+  Serial.print("<");
+  for (int j = 0; j < 50; j++)
+  {
+    if (clampedPercentage >= (j * 2))
     {
-        Serial.println("Yes");
+      Serial.print("=");
     }
     else
     {
-        Serial.println("No");
+      Serial.print("-");
     }
+  }
+  Serial.println(">");
+  Serial.println();
 
-    Serial.print("Track: ");
-    Serial.println(currentlyPlaying.trackName);
-    Serial.print("Track URI: ");
-    Serial.println(currentlyPlaying.trackUri);
-    Serial.println();
-
-    Serial.println("Artists: ");
-    for (int i = 0; i < currentlyPlaying.numArtists; i++)
-    {
-        Serial.print("Name: ");
-        Serial.println(currentlyPlaying.artists[i].artistName);
-        Serial.print("Artist URI: ");
-        Serial.println(currentlyPlaying.artists[i].artistUri);
-        Serial.println();
-    }
-
-    Serial.print("Album: ");
-    Serial.println(currentlyPlaying.albumName);
-    Serial.print("Album URI: ");
-    Serial.println(currentlyPlaying.albumUri);
-    Serial.println();
-
-    long progress = currentlyPlaying.progressMs; // duration passed in the song
-    long duration = currentlyPlaying.durationMs; // Length of Song
-    Serial.print("Elapsed time of song (ms): ");
-    Serial.print(progress);
-    Serial.print(" of ");
-    Serial.println(duration);
-    Serial.println();
-
-    float percentage = ((float)progress / (float)duration) * 100;
-    int clampedPercentage = (int)percentage;
-    Serial.print("<");
-    for (int j = 0; j < 50; j++)
-    {
-        if (clampedPercentage >= (j * 2))
-        {
-            Serial.print("=");
-        }
-        else
-        {
-            Serial.print("-");
-        }
-    }
-    Serial.println(">");
-    Serial.println();
-
-    // will be in order of widest to narrowest
-    // currentlyPlaying.numImages is the number of images that
-    // are stored
-    for (int i = 0; i < currentlyPlaying.numImages; i++)
-    {
-        Serial.println("------------------------");
-        Serial.print("Album Image: ");
-        Serial.println(currentlyPlaying.albumImages[i].url);
-        Serial.print("Dimensions: ");
-        Serial.print(currentlyPlaying.albumImages[i].width);
-        Serial.print(" x ");
-        Serial.print(currentlyPlaying.albumImages[i].height);
-        Serial.println();
-    }
+  // will be in order of widest to narrowest
+  // currentlyPlaying.numImages is the number of images that
+  // are stored
+  for (int i = 0; i < currentlyPlaying.numImages; i++)
+  {
     Serial.println("------------------------");
+    Serial.print("Album Image: ");
+    Serial.println(currentlyPlaying.albumImages[i].url);
+    Serial.print("Dimensions: ");
+    Serial.print(currentlyPlaying.albumImages[i].width);
+    Serial.print(" x ");
+    Serial.print(currentlyPlaying.albumImages[i].height);
+    Serial.println();
+  }
+  Serial.println("------------------------");
 }
 
 void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
@@ -281,7 +295,7 @@ void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
   }
   if (currentlyPlaying.isPlaying)
   {
-    long deepSleepDelay = ((currentlyPlaying.durationMs - currentlyPlaying.progressMs) / 1000) - PRE_RESTART_TIME;
+    long deepSleepDelay = (currentlyPlaying.durationMs - currentlyPlaying.progressMs) / 1000;
     if (deepSleepDelay < 1)
     {
       ESP.restart();
@@ -300,23 +314,24 @@ void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
 
 void printCurrentlyPlayingToDisplay(CurrentlyPlaying currentlyPlaying)
 {
-  display.fillScreen(GxEPD_WHITE);
   if (currentlyPlaying.isPlaying)
-  {
-    char buff[150];
-    sprintf(buff, "%s by ", currentlyPlaying.trackName);
+  { 
+    display.fillScreen(GxEPD_WHITE);
+    String Artists = String(currentlyPlaying.trackName);
+    Artists.concat(" By ");
     for (int i = 0; i < currentlyPlaying.numArtists; i++)
     {
-      char comma = currentlyPlaying.numArtists == i ? ' ' : ',';
-      sprintf(buff, "%s %s%c", buff, comma, currentlyPlaying.trackName);
+      Artists.concat(currentlyPlaying.artists[i].artistName);
+      if (i < currentlyPlaying.numArtists - 1)
+        Artists.concat(", ");
     }
     showLines("I'm listening to: ", 1, 10);
-    showLines(String(buff), 3, 0); // Display the name of the song and the artist name
+    showLines(Artists, 3, 0); // Display the name of the song and the artist name
     HTTPClient http;
-    String url = "https://scannables.scdn.co/uri/plain/svg/ffffff/black/256/";
-    url.concat(currentlyPlaying.trackUri); // add the URI
-    http.begin(url.c_str(), root_ca);      // Specify the URL and certificate
-    int httpCode = http.GET();             // Make the request
+    String url = String(scannablesURL);
+    url.concat(currentlyPlaying.trackUri);
+    http.begin(url.c_str(), scannables_root_ca); // Specify the URL and certificate
+    int httpCode = http.GET();                   // Make the request
     if (httpCode > 0)
     { // Check for the returning code
       String payload = http.getString();
@@ -334,21 +349,25 @@ void printCurrentlyPlayingToDisplay(CurrentlyPlaying currentlyPlaying)
       }
       drawSpotifyScan(0, 76, lengths);
     }
-
     else
     {
-      Serial.println("Error on HTTP request");
+      if(DEBUG) Serial.println("Error on HTTP request");
     }
-
     http.end(); // Free the resources
-  }
-  else
-  {
-    showLines("I'm not listening to anything right now :(", 2, 50);
-  }
 
-  display.update();
+    display.update();
+    hasResetDisplay = true;
+  }
+  else if (!currentlyPlaying.isPlaying && wasPlaying || hasResetDisplay)
+  {
+    display.fillScreen(GxEPD_WHITE);
+    showLines("I'm not listening to anything right now :(", 2, 50);
+    display.update();
+    wasPlaying = false;
+    hasResetDisplay = true;
+  }
 }
+
 void showLines(String text, int maxLines, int y)
 { // this function displays words whole on the display and limits the lines they use
   if (y > 0)
@@ -393,6 +412,7 @@ void showLines(String text, int maxLines, int y)
     display.println(text.c_str());
   }
 }
+
 void drawSpotifyScan(int x, int y, int lengths[24])
 { // the function to show the spotify scan code
   display.drawExampleBitmap(spotifyLogo, x, y, 46, 46, GxEPD_BLACK);
@@ -406,6 +426,7 @@ void drawRoundedLines(int distanceBetween, int width, int lengths[], int count, 
     drawRoundedLine(lengths[i], width, x + ((distanceBetween + width) * i), y);
   }
 }
+
 void drawRoundedLine(int height, int width, int x, int y)
 { // for drawing a singular rounded line, y is parsed in the middle of the line
   y = y - (height / 2);

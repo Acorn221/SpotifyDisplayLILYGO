@@ -1,0 +1,14 @@
+//------- Replace the following! ------
+const char *ssid = "";
+const char *password = "";
+
+// Follow the instructions on the ArduinoSpotify "getRefreshToken" example to get all of this
+char clientId[] = "";     // Your client ID of your spotify APP
+char clientSecret[] = ""; // Your client Secret of your spotify APP (Do Not share this!)
+
+// Country code, including this is advisable
+#define SPOTIFY_MARKET "GB"
+
+
+// Follow this tutorial to get the refresh token, remember to add the arduino's IP to your Redirect URIs
+#define SPOTIFY_REFRESH_TOKEN ""
