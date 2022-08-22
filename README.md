@@ -10,6 +10,8 @@ This shows the song that is currently playing and the spotify scan code, it's fo
 
 This repo is has been created with PlatformIO and uses the ESP32 LILYGO E-Paper board.
 
+Change the definitions in /src/main.cpp to match your wifi and spotify details.
+
 Install the PlatformIO Extension in VSCode and click 'Upload and Monitor' under esp32dev.
 
 Hopefully this should all work without any errors.
