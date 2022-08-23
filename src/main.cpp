@@ -11,11 +11,9 @@ This code is partically based off of the ArduinoSpotify example
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <SpotifyArduinoCert.h>
 
-
 void printCurrentlyPlayingToDisplay(CurrentlyPlaying currentlyPlaying);
 void handleDeepSleep(CurrentlyPlaying currentlyPlaying);
 void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying);
-void basicCallback(CurrentlyPlaying currentlyPlaying);
 
 #define TIME_TO_SLEEP 300 // Time between checking if songs are playing (in deepsleep)
 
@@ -28,15 +26,15 @@ GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);        // arbitrary selection o
 RTC_DATA_ATTR String oldSongURI = "";
 RTC_DATA_ATTR bool wasPlaying = false;
 RTC_DATA_ATTR bool hasResetDisplay = false;
+RTC_DATA_ATTR BearerToken bearerToken = {"", 0, 0};
+RTC_DATA_ATTR unsigned long int lastSleepDuration = 0;
 
-// The SpotifyArduino instance is in the RTC ram bc it's small enough and it prevents the access token from being lost
-SpotifyArduino spotify(client, CLIENT_ID, CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN);
-
-
+SpotifyArduino spotify(client, CLIENT_ID, CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN, false);
 
 void setup()
 {
-  long setupTime = millis();
+
+  // Initialising the display
   display.init(115200);
   display.setRotation(1);
   display.fillScreen(GxEPD_WHITE);
@@ -45,14 +43,17 @@ void setup()
   display.setTextSize(1);
   display.setTextWrap(true);
 
-  Serial.begin(115200);
+  if (DEBUG)
+    Serial.begin(115200);
+
+  // Connecting to the wifi
   WiFi.mode(WIFI_STA);
   WiFi.begin(SSID, PASSWORD);
-  // Serial.println("");
 
   // Wait for connection
   if (WiFi.waitForConnectResult() != WL_CONNECTED)
   {
+    lastSleepDuration = millis();
     ESP.restart();
   }
 
@@ -65,23 +66,36 @@ void setup()
     Serial.println(WiFi.localIP());
   }
 
+  // Setting the Spotify SSL key
   client.setCACert(spotify_server_cert);
 
   // If you want to enable some extra debugging
   // uncomment the "#define SPOTIFY_DEBUG" in ArduinoSpotify.h
 
   if (DEBUG)
-    Serial.println("Checking and Refreshing Access Tokens If Needed!");
-  if (!spotify.checkAndRefreshAccessToken())
+    Serial.println("Checking Access Tokens");
+
+  if (bearerToken.timeTokenRefreshed - lastSleepDuration < 1)
   {
-    if (DEBUG)
-      Serial.println("Failed to get access tokens");
-    ESP.restart();
+    if (!spotify.checkAndRefreshAccessToken())
+    {
+      if (DEBUG)
+        Serial.println("Failed to get access tokens");
+      ESP.restart();
+    }
+    else
+    {
+      bearerToken = spotify.getAccessToken();
+
+      if (DEBUG)
+        Serial.println("Got access tokens");
+    }
   }
   else
   {
+    bearerToken.timeTokenRefreshed -= lastSleepDuration;
     if (DEBUG)
-      Serial.println("Got access tokens");
+      Serial.printf("Access tokens are still valid, they have %dm left, last sleep duration was %dm\n", (int)(bearerToken.timeTokenRefreshed / 1000 / 60), (int)(lastSleepDuration / 1000 / 60));
   }
 
   if (DEBUG)
@@ -114,15 +128,9 @@ void setup()
       Serial.print("Error: ");
       Serial.println(status);
     }
+    lastSleepDuration = millis();
     ESP.restart();
   }
-}
-
-void basicCallback(CurrentlyPlaying currentlyPlaying)
-{
-  Serial.println("");
-  Serial.println("basicCallback");
-  Serial.println("");
 }
 
 /**
@@ -139,7 +147,7 @@ void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
     oldSongURI = String(currentlyPlaying.trackUri);
     if (DEBUG)
       printCurrentlyPlayingToSerial(currentlyPlaying);
-      printCurrentlyPlayingToDisplay(currentlyPlaying);
+    printCurrentlyPlayingToDisplay(currentlyPlaying);
     wasPlaying = currentlyPlaying.isPlaying;
   }
   handleDeepSleep(currentlyPlaying);
@@ -185,6 +193,11 @@ void printCurrentlyPlayingToDisplay(CurrentlyPlaying currentlyPlaying)
   }
 }
 
+/**
+ * @brief This puts the ESP32 into deep sleep for the song duration (if one is playing), or the 'deepSleepDelay' variable
+ *
+ * @param currentlyPlaying
+ */
 void handleDeepSleep(CurrentlyPlaying currentlyPlaying)
 {
   if (currentlyPlaying.isPlaying)
@@ -192,16 +205,19 @@ void handleDeepSleep(CurrentlyPlaying currentlyPlaying)
     long deepSleepDelay = (currentlyPlaying.durationMs - currentlyPlaying.progressMs) / 1000;
     if (deepSleepDelay < 1)
     {
+      lastSleepDuration = millis();
       ESP.restart();
     }
     else
     {
       esp_sleep_enable_timer_wakeup(deepSleepDelay * uS_TO_S_FACTOR);
+      lastSleepDuration = deepSleepDelay * uS_TO_S_FACTOR + millis();
     }
   }
   else
   {
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    lastSleepDuration = TIME_TO_SLEEP * uS_TO_S_FACTOR + millis();
   }
   esp_deep_sleep_start();
 }
