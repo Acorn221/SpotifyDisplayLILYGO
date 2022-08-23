@@ -1,7 +1,11 @@
 #include <Arduino.h>
+#include <SpotifyArduino.h>
 #include <GxGDE0213B72B/GxGDE0213B72B.h> // 2.13" b/w
 
+
 #define MAX_LENGTH_PER_LINE 22 // this is the maximum amount of text characters per line of the screen
+
+#define uS_TO_S_FACTOR 1000000ULL // Conversion factor for micro seconds to seconds
 
 const char *scannables_root_ca = // this certificate is for scannables.scdn.co to get the scan link
     "-----BEGIN CERTIFICATE-----\n"
@@ -27,6 +31,8 @@ const char *scannables_root_ca = // this certificate is for scannables.scdn.co t
     "CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=\n"
     "-----END CERTIFICATE-----";
 
+const char *scannablesURL = "https://scannables.scdn.co/uri/plain/svg/ffffff/black/256/";
+
 const unsigned char spotifyLogo[] PROGMEM = {
     0xff, 0xff, 0xe0, 0x1f, 0xff, 0xfc, 0xff, 0xfe, 0x00, 0x01, 0xff, 0xfc, 0xff, 0xf8, 0x00, 0x00,
     0x7f, 0xfc, 0xff, 0xe0, 0x00, 0x00, 0x1f, 0xfc, 0xff, 0xc0, 0x00, 0x00, 0x0f, 0xfc, 0xff, 0x00,
@@ -48,6 +54,8 @@ const unsigned char spotifyLogo[] PROGMEM = {
     0xe0, 0x1f, 0xff, 0xfc};
 
 void showLines(String text, int maxLines, int y, GxEPD_Class display);
+void setDisplayNotListening(GxEPD_Class display);
 void drawSpotifyScan(int x, int y, int lengths[24], GxEPD_Class display);
 void drawRoundedLines(int distanceBetween, int width, int lengths[], int count, int x, int y, GxEPD_Class display);
 void drawRoundedLine(int height, int width, int x, int y, GxEPD_Class display);
+void printCurrentlyPlayingToSerial(CurrentlyPlaying currentlyPlaying);
