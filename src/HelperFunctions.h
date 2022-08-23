@@ -13,11 +13,10 @@
 #include <GxIO/GxIO.h>
 #include <SpotifyArduino.h>
 #include <ArduinoJson.h>
+#include "Config.h"
 
 #ifndef CONST_H
     #define CONST_H
-
-    #define DEBUG true // Debug flag enables/disables serial output
 
     #define MAX_LENGTH_PER_LINE 22 // this is the maximum amount of text characters per line of the screen
 
