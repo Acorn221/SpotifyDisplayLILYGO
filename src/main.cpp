@@ -17,10 +17,8 @@ void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying);
 
 #define TIME_TO_SLEEP 300 // Time between checking if songs are playing (in deepsleep)
 
-WiFiClientSecure client;
-
-GxIO_Class io(SPI, /*CS=5*/ SS, /*DC=*/17, /*RST=*/16); // arbitrary selection of 17, 16
-GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);        // arbitrary selection of (16), 4
+GxIO_Class io(SPI, /*CS=5*/ SS, /*DC=*/17, /*RST=*/16);
+GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);
 
 // used to decide whether or not to update the display
 RTC_DATA_ATTR String oldSongURI = "";
@@ -29,6 +27,7 @@ RTC_DATA_ATTR bool hasResetDisplay = false;
 RTC_DATA_ATTR BearerToken bearerToken = {"", 0, 0};
 RTC_DATA_ATTR unsigned long int lastSleepDuration = 0;
 
+WiFiClientSecure client;
 SpotifyArduino spotify(client, CLIENT_ID, CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN, false);
 
 void setup()
@@ -58,13 +57,7 @@ void setup()
   }
 
   if (DEBUG)
-  {
-    Serial.println("");
-    Serial.print("Connected to ");
-    Serial.println(SSID);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
+    Serial.printf("\nConnected To: %s, IP: %s\n", SSID, WiFi.localIP().toString().c_str());
 
   // Setting the Spotify SSL key
   client.setCACert(spotify_server_cert);
@@ -103,6 +96,7 @@ void setup()
 
   // Market can be excluded if you want e.g. spotify.getCurrentlyPlaying()
   int status = spotify.getCurrentlyPlaying(handleCurrentlyPlayingCallback, SPOTIFY_MARKET);
+
   if (status == 200)
   {
     if (DEBUG)
@@ -124,10 +118,8 @@ void setup()
   else
   {
     if (DEBUG)
-    {
-      Serial.print("Error: ");
-      Serial.println(status);
-    }
+      Serial.printf("Error: %d\n", status);
+
     lastSleepDuration = millis();
     ESP.restart();
   }
@@ -140,7 +132,6 @@ void setup()
  */
 void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
 {
-  Serial.println("Callback Called");
   // if the playing status has changed or the song has changed
   if (currentlyPlaying.isPlaying != wasPlaying || strcmp(currentlyPlaying.trackUri, oldSongURI.c_str()) != 0)
   {
@@ -150,6 +141,10 @@ void handleCurrentlyPlayingCallback(CurrentlyPlaying currentlyPlaying)
     printCurrentlyPlayingToDisplay(currentlyPlaying);
     wasPlaying = currentlyPlaying.isPlaying;
   }
+  // just to make sure the serial output has completed before we sleep!
+  if (DEBUG)
+    Serial.flush();
+
   handleDeepSleep(currentlyPlaying);
 }
 
@@ -211,7 +206,7 @@ void handleDeepSleep(CurrentlyPlaying currentlyPlaying)
     else
     {
       esp_sleep_enable_timer_wakeup(deepSleepDelay * uS_TO_S_FACTOR);
-      lastSleepDuration = deepSleepDelay * uS_TO_S_FACTOR + millis();
+      lastSleepDuration = (deepSleepDelay * uS_TO_S_FACTOR) + millis();
     }
   }
   else
