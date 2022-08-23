@@ -14,3 +14,7 @@
 // Tick the boxes "user-read-playback-state", "user-read-playback-position" and "user-modify-playback-state"
 // https://getyourspotifyrefreshtoken.herokuapp.com/
 #define SPOTIFY_REFRESH_TOKEN ""
+
+#ifndef DEBUG
+	#define DEBUG true // Debug flag enables/disables serial output
+#endif
