@@ -24,11 +24,10 @@ GxEPD_Class display(io, /*RST=*/16, /*BUSY=*/4);
 RTC_DATA_ATTR String oldSongURI = "";
 RTC_DATA_ATTR bool wasPlaying = false;
 RTC_DATA_ATTR bool hasResetDisplay = false;
-RTC_DATA_ATTR BearerToken bearerToken = {"", 0, 0};
 RTC_DATA_ATTR unsigned long int lastSleepDuration = 0;
 
 WiFiClientSecure client;
-SpotifyArduino spotify(client, CLIENT_ID, CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN, false);
+SpotifyArduino spotify(client, CLIENT_ID, CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN);
 
 void setup()
 {
@@ -68,9 +67,7 @@ void setup()
   if (DEBUG)
     Serial.println("Checking Access Tokens");
 
-  if (bearerToken.timeTokenRefreshed - lastSleepDuration < 1)
-  {
-    if (!spotify.checkAndRefreshAccessToken())
+    if (!spotify.refreshAccessToken())
     {
       if (DEBUG)
         Serial.println("Failed to get access tokens");
@@ -78,18 +75,9 @@ void setup()
     }
     else
     {
-      bearerToken = spotify.getAccessToken();
-
       if (DEBUG)
         Serial.println("Got access tokens");
     }
-  }
-  else
-  {
-    bearerToken.timeTokenRefreshed -= lastSleepDuration;
-    if (DEBUG)
-      Serial.printf("Access tokens are still valid, they have %dm left, last sleep duration was %dm\n", (int)(bearerToken.timeTokenRefreshed / 1000 / 60), (int)(lastSleepDuration / 1000 / 60));
-  }
 
   if (DEBUG)
     Serial.println("getting currently playing song:");
