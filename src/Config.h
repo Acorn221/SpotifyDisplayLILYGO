@@ -12,7 +12,7 @@
 
 // Go here to get your refresh token, this is not very secure but it's the most convenient way to get it
 // Tick the boxes "user-read-playback-state", "user-read-playback-position" and "user-modify-playback-state"
-// https://getyourspotifyrefreshtoken.herokuapp.com/
+// https://acorn221.github.io/spotify-token-getter/
 #define SPOTIFY_REFRESH_TOKEN ""
 
 #ifndef DEBUG
